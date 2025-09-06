@@ -123,8 +123,19 @@ pub fn handler(ast: DeriveInput) -> TokenStream {
             const fn __elp_max(a: usize, b: usize) -> usize { if a > b { a } else { b } }
             // 子结构体最大层数：基础类型=0，结构体=1+子层数
             pub const __ELP_CHILD_DEPTH: usize = { #max_fold };
-            // 限制：最大两层（顶层+一层子结构体）；第三层会使子深度>2，此处触发编译错误
-            pub const __ELP_ASSERT: [(); (Self::__ELP_CHILD_DEPTH <= 2) as usize - 1] = [];
+            // 限制：最大两层（顶层+一层子结构体）；超过则给出友好的错误信息
+            pub const __ELP_ASSERT_MSG: () = {
+                if Self::__ELP_CHILD_DEPTH > 1 {
+                    panic!(concat!(
+                        "配置结构体 '",
+                        stringify!(#name),
+                        "' 嵌套层级超过允许的两层（顶层 + 一层子结构体）"
+                    ));
+                }
+                ()
+            };
+            // 强制在类型层面引用上面的常量，确保编译期一定求值并报错
+        pub const __ELP_ENFORCER: [(); { let _ = Self::__ELP_ASSERT_MSG; 1 }] = [(); { let _ = Self::__ELP_ASSERT_MSG; 1 }];
         }
 
         impl Default for #name {

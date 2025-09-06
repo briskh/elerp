@@ -1,28 +1,37 @@
-use libelp::ConfigStruct;
+use libelp::Configuration;
 
 #[allow(dead_code)]
-#[derive(ConfigStruct)]
-struct Redis {
+#[derive(Configuration)]
+struct Test {
     #[config(default = "localhost", note = "redis host")]
     host: String,
     #[config(default = 5432, note = "redis port")]
     port: u16,
 }
 
-#[derive(ConfigStruct)]
+#[allow(dead_code)]
+#[derive(Configuration)]
+struct Redis {
+    #[config(default = "localhost", note = "test host")]
+    host: String,
+    #[config(default = 5432, note = "test port")]
+    port: u16,
+}
+
+#[derive(Configuration)]
 struct Database {
     #[config(default = "localhost", note = "db host")]
     host: String,
     #[config(default = 5432, note = "db port")]
     port: u16,
-    redis: Redis,
 }
 
-#[derive(ConfigStruct)]
+#[derive(Configuration)]
 struct Config {
     #[config(default = true, note = "enable feature")]
     feature: bool,
     database: Database,
+    redis: Redis,
 }
 
 fn main() {
