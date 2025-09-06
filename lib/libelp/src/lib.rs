@@ -1,12 +1,4 @@
-pub use libelp_macro::*;
+pub mod rules;
 
-#[macro_export]
-macro_rules! my_vec {
-    ( $( $x:expr ),* ) => {
-        {
-            let mut v = Vec::new();
-            $( v.push($x); )*
-            v
-        }
-    };
-}
+pub use libelp_derive::*;
+pub use rules::*;

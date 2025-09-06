@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::DeriveInput;
 
-pub fn handle_derive_configuration(ast: DeriveInput) -> TokenStream {
+pub fn derive_configuration_handler(ast: DeriveInput) -> TokenStream {
     let name = &ast.ident;
 
     let data = match &ast.data {
@@ -27,5 +27,5 @@ pub fn handle_derive_configuration(ast: DeriveInput) -> TokenStream {
         pub fn hello() -> &'static str { "hello from derive macro" }
       }
     };
-    TokenStream::from(expanded)
+    return TokenStream::from(expanded);
 }

@@ -4,4 +4,4 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-libelp-macro = { path = "../libelp-macro" }
+libelp-derive = { path = "../libelp-derive" }

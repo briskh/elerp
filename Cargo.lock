@@ -138,22 +138,22 @@ checksum = "6a82ae493e598baaea5209805c49bbf2ea7de956d50d7da0da1164f9c6d28543"
 name = "libelp"
 version = "0.1.0"
 dependencies = [
- "libelp-macro",
+ "libelp-derive",
 ]
 
 [[package]]
-name = "libelp-macro"
+name = "libelp-derive"
 version = "0.1.0"
 dependencies = [
  "darling",
- "libelp-macro-core",
+ "libelp-derive-internal",
  "proc-macro2",
  "quote",
  "syn",
 ]
 
 [[package]]
-name = "libelp-macro-core"
+name = "libelp-derive-internal"
 version = "0.1.0"
 dependencies = [
  "darling",
