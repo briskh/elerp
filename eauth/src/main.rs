@@ -1,11 +1,9 @@
 use libelp::Configuration;
-
 #[allow(dead_code)]
 #[derive(Configuration)]
 struct Test {
-    #[default = "8080"]
-    #[note = "The port number of the server"]
-    age: u16,
+    #[config(default = "8080", note = "The port number of the server")]
+    port: u16,
 }
 
 fn main() {

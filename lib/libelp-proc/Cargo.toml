@@ -10,4 +10,5 @@ proc-macro = true
 [dependencies]
 libelp-proc-internal = { path = "../libelp-proc-internal" }
 proc-macro2 = "1"
+quote = "1"
 syn = { version = "2", features = ["full", "extra-traits"] }

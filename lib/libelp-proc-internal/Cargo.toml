@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 darling = "0.21"
+litrs = "0.4"
 proc-macro2 = "1"
 quote = "1"
 syn = { version = "2", features = ["full", "extra-traits"] }
