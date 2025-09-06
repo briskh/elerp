@@ -9,3 +9,4 @@ litrs = "0.4"
 proc-macro2 = "1"
 quote = "1"
 syn = { version = "2", features = ["full", "extra-traits"] }
+toml = "0.8"

@@ -5,10 +5,10 @@ use syn::LitStr;
 
 use syn::parse_macro_input;
 
-#[proc_macro_derive(Configuration, attributes(config))]
+#[proc_macro_derive(ConfigStruct, attributes(config))]
 pub fn derive_configuration(input: TokenStream) -> TokenStream {
     let ast = parse_macro_input!(input as syn::DeriveInput);
-    return internal::configuration::handler(ast).into();
+    return internal::configure::handler(ast).into();
 }
 
 #[proc_macro]

@@ -1,6 +1,6 @@
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream};
 use quote::quote;
-use syn::{Expr, Lit, Type};
+use syn::{Expr, Lit, LitStr, Type};
 
 /// 处理默认值表达式，检查类型匹配并进行必要的转换
 pub fn process_default_value(
@@ -22,8 +22,27 @@ pub fn process_default_value(
                 format!("不支持的字面量类型: {:?}", lit.lit),
             )),
         }
+    } else if let Expr::Path(path_expr) = default_expr {
+        // 处理路径表达式（如标识符）
+        if let Some(segment) = path_expr.path.segments.last() {
+            let ident = &segment.ident;
+            match type_name.as_str() {
+                // 将标识符内容当作字符串字面量处理
+                "String" => {
+                    let lit = LitStr::new(&ident.to_string(), Span::call_site());
+                    Ok(quote! { #lit.to_string() })
+                }
+                "str" => {
+                    let lit = LitStr::new(&ident.to_string(), Span::call_site());
+                    Ok(quote! { #lit })
+                }
+                _ => Ok(quote! { #ident }),
+            }
+        } else {
+            Err(syn::Error::new_spanned(default_expr, "无法解析路径表达式"))
+        }
     } else {
-        // 对于非字面量表达式，直接使用
+        // 对于其他非字面量表达式，直接使用
         Ok(quote! { #default_expr })
     }
 }

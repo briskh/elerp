@@ -5,6 +5,7 @@ use syn::{DeriveInput, Expr};
 use darling::FromField;
 
 mod process_default_value;
+mod toml_utils;
 
 #[derive(FromField, Default, Debug)]
 #[darling(attributes(config))]
@@ -28,11 +29,15 @@ pub fn handler(ast: DeriveInput) -> TokenStream {
                 .into();
         }
     };
-    // let mut inits = Vec::new();
+
+    // 收集字段配置信息
+    let mut field_configs = Vec::new();
+    let mut field_assignments = Vec::new();
 
     for field in &data.fields {
         let ident = field.ident.as_ref().expect("named fields only");
         let opts = ConfigurationField::from_field(field).unwrap_or_default();
+
         let default_value = match opts.default {
             Some(ref default_expr) => {
                 // 使用独立的默认值处理模块
@@ -53,16 +58,51 @@ pub fn handler(ast: DeriveInput) -> TokenStream {
             }
         };
 
+        // 收集字段配置信息用于TOML生成
+        field_configs.push((field.clone(), opts.default.clone(), opts.note.clone()));
+
+        // 生成字段赋值
+        field_assignments.push(quote! {
+            #ident: #default_value,
+        });
+
         println!("字段: {:?}", ident);
         println!("类型: {:?}", field.ty);
         println!("注释: {:?}", opts.note);
         println!("默认值: {:?}", default_value);
     }
 
-    let expanded = quote! {
-      impl #name {
-        pub fn hello() -> &'static str { "hello from derive macro" }
-      }
+    // 收集字段引用
+    let fields: Vec<&syn::Field> = data.fields.iter().collect();
+
+    // 生成from_toml方法
+    let from_toml_impl = toml_utils::generate_from_toml_impl(name, &fields);
+
+    // 生成to_toml方法
+    let to_toml_impl = match toml_utils::generate_to_toml_impl(name, &fields, &field_configs) {
+        Ok(impl_code) => impl_code,
+        Err(e) => return e.to_compile_error().into(),
     };
+
+    let expanded = quote! {
+        impl #name {
+            pub fn new() -> Self {
+                Self {
+                    #(#field_assignments)*
+                }
+            }
+
+            #from_toml_impl
+
+            #to_toml_impl
+        }
+
+        impl Default for #name {
+            fn default() -> Self {
+                Self::new()
+            }
+        }
+    };
+
     return TokenStream::from(expanded);
 }
