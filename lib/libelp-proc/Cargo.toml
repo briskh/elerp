@@ -1,10 +1,13 @@
 [package]
-name = "libelp-derive-internal"
+name = "libelp-proc"
 version = "0.1.0"
 edition = "2024"
 
+
+[lib]
+proc-macro = true
+
 [dependencies]
-darling = "0.21"
+libelp-proc-internal = { path = "../libelp-proc-internal" }
 proc-macro2 = "1"
-quote = "1"
 syn = { version = "2", features = ["full", "extra-traits"] }
