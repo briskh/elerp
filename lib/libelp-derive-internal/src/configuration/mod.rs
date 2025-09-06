@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::DeriveInput;
 
-pub fn derive_configuration_handler(ast: DeriveInput) -> TokenStream {
+pub fn handler(ast: DeriveInput) -> TokenStream {
     let name = &ast.ident;
 
     let data = match &ast.data {

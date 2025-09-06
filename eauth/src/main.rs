@@ -1,5 +1,5 @@
 use libelp::Configuration;
-use libelp::my_vec;
+
 #[allow(dead_code)]
 #[derive(Configuration)]
 struct Test {
@@ -9,7 +9,14 @@ struct Test {
 }
 
 fn main() {
-    let v = my_vec!(1, 2, 3);
-    println!("{:?}", v);
     println!("{}", Test::hello());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_default() {
+        assert_eq!(main(), ());
+    }
 }

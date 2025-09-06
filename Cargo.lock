@@ -145,10 +145,8 @@ dependencies = [
 name = "libelp-derive"
 version = "0.1.0"
 dependencies = [
- "darling",
  "libelp-derive-internal",
  "proc-macro2",
- "quote",
  "syn",
 ]
 

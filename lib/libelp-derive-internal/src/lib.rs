@@ -1,3 +1,3 @@
-pub mod derive_configuration_handler;
+pub mod configuration;
 
-pub use derive_configuration_handler::*;
+// pub use configuration_derive::*;
