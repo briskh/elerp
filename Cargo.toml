@@ -1,0 +1,6 @@
+[workspace]
+members = ["eauth", "lib/libelp", "lib/libelp-macro", "lib/libelp-macro-core"]
+resolver = "3"
+
+[workspace.dependencies]
+tokio = {version = "1", features = ["full"]}

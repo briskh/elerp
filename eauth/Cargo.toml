@@ -1,0 +1,10 @@
+[package]
+name = "eauth"
+version = "0.1.0"
+edition = "2024"
+
+
+[dependencies]
+
+libelp-macro = { path = "../lib/libelp-macro"}
+tokio = { workspace = true }
