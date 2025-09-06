@@ -5,6 +5,5 @@ edition = "2024"
 
 
 [dependencies]
-
-libelp-macro = { path = "../lib/libelp-macro"}
+libelp = { path = "../lib/libelp" }
 tokio = { workspace = true }

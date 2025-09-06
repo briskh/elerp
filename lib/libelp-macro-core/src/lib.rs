@@ -1,14 +1,31 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+use proc_macro2::TokenStream;
+use quote::quote;
+use syn::DeriveInput;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub fn handle_derive_configuration(ast: DeriveInput) -> TokenStream {
+    let name = &ast.ident;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+    let data = match &ast.data {
+        // 检查是否为结构体,如果为结构体,则继续处理
+        syn::Data::Struct(s) => s,
+        // 如果为其他类型,则返回错误
+        _ => {
+            return syn::Error::new_spanned(name, "this derive macro only supports structs")
+                .to_compile_error()
+                .into();
+        }
+    };
+
+    for field in &data.fields {
+        for attr in &field.attrs {
+            println!("field attr: {:?}", attr);
+        }
     }
+
+    let expanded = quote! {
+      impl #name {
+        pub fn hello() -> &'static str { "hello from derive macro" }
+      }
+    };
+    TokenStream::from(expanded)
 }
