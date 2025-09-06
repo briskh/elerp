@@ -122,11 +122,14 @@ pub fn generate_from_toml_impl(_struct_name: &syn::Ident, fields: &[&Field]) -> 
                         .unwrap_or_default()
                 },
                 _ => quote! {
-                    // 对于其他类型，尝试从字符串解析
-                    toml_value.get(stringify!(#field_name))
-                        .and_then(|v| v.as_str())
-                        .and_then(|s| s.parse::<#field_type>().ok())
-                        .unwrap_or_default()
+                    // 嵌套结构体（最多两层）：从子表递归解析
+                    match toml_value.get(stringify!(#field_name)).and_then(|v| v.as_table()) {
+                        Some(tbl) => {
+                            let sub_str = ::toml::to_string(tbl).unwrap_or_default();
+                            <#field_type>::from_toml(&sub_str).unwrap_or_default()
+                        }
+                        None => Default::default(),
+                    }
                 },
             };
 
@@ -153,21 +156,19 @@ pub fn generate_to_toml_impl(
     _fields: &[&Field],
     field_configs: &[(Field, Option<Expr>, Option<String>)],
 ) -> Result<TokenStream, syn::Error> {
-    let mut field_blocks = Vec::new();
+    // 为每个字段生成分支代码
+    let mut per_field_snippets: Vec<TokenStream> = Vec::new();
 
     for (field, default_expr, note) in field_configs {
-        let field_name = field
+        let field_ident = field
             .ident
             .as_ref()
             .ok_or_else(|| syn::Error::new_spanned(field, "字段必须有名称"))?;
-
         let type_name = get_type_name(&field.ty)?;
         let note_text = note.as_deref().unwrap_or("");
-        let default_value = field_value_to_toml_string(field, default_expr, &field.ty)?;
+        let default_value_lit = field_value_to_toml_string(field, default_expr, &field.ty)?;
 
-        // 生成用于比较的默认值表达式（类型安全）
         let default_compare_tokens: TokenStream = if let Some(expr) = default_expr {
-            // 复用默认值处理逻辑，得到一个可直接比较的表达式 Token
             match super::process_default_value::process_default_value(expr, &field.ty) {
                 Ok(ts) => ts,
                 Err(e) => return Err(e),
@@ -176,123 +177,66 @@ pub fn generate_to_toml_impl(
             quote! { Default::default() }
         };
 
-        // 生成每个字段的TOML块
-        let field_block = match type_name.as_str() {
-            "String" => {
-                quote! {
-                    // 注释行
-                    format!("#{}: {}, default: {}", #note_text, #type_name, #default_value),
-                    // 字段行（使用 toml::to_string 生成 key = value）
-                    {
-                        let __is_default = self.#field_name == #default_compare_tokens;
-                        let __cur_line = {
-                            let mut __m = ::std::collections::BTreeMap::new();
-                            __m.insert(stringify!(#field_name).to_string(), self.#field_name.clone());
-                            ::toml::to_string(&__m).unwrap_or_default().trim_end().to_string()
-                        };
-                        let __default_line = {
-                            let mut __m = ::std::collections::BTreeMap::new();
-                            let __default_value = #default_compare_tokens;
-                            __m.insert(stringify!(#field_name).to_string(), __default_value);
-                            ::toml::to_string(&__m).unwrap_or_default().trim_end().to_string()
-                        };
-                        if __is_default { format!("# {}", __default_line) } else { __cur_line }
-                    },
-                    String::new(),
+        let is_primitive = matches!(
+            type_name.as_str(),
+            "String"
+                | "str"
+                | "i8"
+                | "i16"
+                | "i32"
+                | "i64"
+                | "i128"
+                | "isize"
+                | "u8"
+                | "u16"
+                | "u32"
+                | "u64"
+                | "u128"
+                | "usize"
+                | "f32"
+                | "f64"
+                | "bool"
+        );
+
+        let snippet = if is_primitive {
+            quote! {
+                // 注释
+                lines.push(format!("# {}, {}, 默认值: {}", #note_text, #type_name, #default_value_lit));
+                // 值行
+                {
+                    let __is_default = self.#field_ident == #default_compare_tokens;
+                    let __line = {
+                        let mut __m = ::std::collections::BTreeMap::new();
+                        __m.insert(stringify!(#field_ident).to_string(), self.#field_ident.clone());
+                        ::toml::to_string(&__m).unwrap_or_default().trim_end().to_string()
+                    };
+                    if __is_default { lines.push(format!("# {}", __line)); } else { lines.push(__line); }
                 }
+                lines.push(String::new());
             }
-            "i32" | "i64" | "u16" | "u32" | "u64" | "usize" | "isize" | "i8" | "i16" | "u8"
-            | "i128" | "u128" => {
-                quote! {
-                    format!("#{}: {}, default: {}", #note_text, #type_name, #default_value),
-                    {
-                        let __is_default = self.#field_name == #default_compare_tokens;
-                        let __cur_line = {
-                            let mut __m = ::std::collections::BTreeMap::new();
-                            __m.insert(stringify!(#field_name).to_string(), self.#field_name);
-                            ::toml::to_string(&__m).unwrap_or_default().trim_end().to_string()
-                        };
-                        let __default_line = {
-                            let mut __m = ::std::collections::BTreeMap::new();
-                            let __default_value = #default_compare_tokens;
-                            __m.insert(stringify!(#field_name).to_string(), __default_value);
-                            ::toml::to_string(&__m).unwrap_or_default().trim_end().to_string()
-                        };
-                        if __is_default { format!("# {}", __default_line) } else { __cur_line }
-                    },
-                    String::new(),
+        } else {
+            // 嵌套结构体：最多两层。深度为0时添加段名；深度>=1时直接拼接子内容（其内部会自行截止到两层）。
+            quote! {
+                if __depth == 0 {
+                    lines.push(format!("[{}]", stringify!(#field_ident)));
                 }
-            }
-            "f64" | "f32" => {
-                quote! {
-                    format!("#{}: {}, default: {}", #note_text, #type_name, #default_value),
-                    {
-                        let __is_default = self.#field_name == #default_compare_tokens;
-                        let __cur_line = {
-                            let mut __m = ::std::collections::BTreeMap::new();
-                            __m.insert(stringify!(#field_name).to_string(), self.#field_name);
-                            ::toml::to_string(&__m).unwrap_or_default().trim_end().to_string()
-                        };
-                        let __default_line = {
-                            let mut __m = ::std::collections::BTreeMap::new();
-                            let __default_value = #default_compare_tokens;
-                            __m.insert(stringify!(#field_name).to_string(), __default_value);
-                            ::toml::to_string(&__m).unwrap_or_default().trim_end().to_string()
-                        };
-                        if __is_default { format!("# {}", __default_line) } else { __cur_line }
-                    },
-                    String::new(),
-                }
-            }
-            "bool" => {
-                quote! {
-                    format!("#{}: {}, default: {}", #note_text, #type_name, #default_value),
-                    {
-                        let __is_default = self.#field_name == #default_compare_tokens;
-                        let __cur_line = {
-                            let mut __m = ::std::collections::BTreeMap::new();
-                            __m.insert(stringify!(#field_name).to_string(), self.#field_name);
-                            ::toml::to_string(&__m).unwrap_or_default().trim_end().to_string()
-                        };
-                        let __default_line = {
-                            let mut __m = ::std::collections::BTreeMap::new();
-                            let __default_value = #default_compare_tokens;
-                            __m.insert(stringify!(#field_name).to_string(), __default_value);
-                            ::toml::to_string(&__m).unwrap_or_default().trim_end().to_string()
-                        };
-                        if __is_default { format!("# {}", __default_line) } else { __cur_line }
-                    },
-                    String::new(),
-                }
-            }
-            _ => {
-                quote! {
-                    format!("#{}: {}, default: {}", #note_text, #type_name, #default_value),
-                    {
-                        let mut __m = ::toml::map::Map::new();
-                        let __default_line = {
-                            let mut __m = ::toml::map::Map::new();
-                            let __default_value = #default_compare_tokens;
-                            __m.insert(stringify!(#field_name).to_string(), ::toml::Value::from(__default_value));
-                            ::toml::Value::Table(__m).to_string().trim_end().to_string()
-                        };
-                        format!("# {}", __default_line)
-                    },
-                    String::new(),
-                }
+                lines.push(self.#field_ident.__elp_to_toml_depth(__depth + 1));
+                lines.push(String::new());
             }
         };
 
-        field_blocks.push(field_block);
+        per_field_snippets.push(snippet);
     }
 
-    Ok(quote! {
-        pub fn to_toml(&self) -> String {
-            let mut lines = Vec::new();
+    let expanded = quote! {
+        pub fn to_toml(&self) -> String { self.__elp_to_toml_depth(0) }
 
-            #(lines.extend(vec![#field_blocks]);)*
-
+        pub fn __elp_to_toml_depth(&self, __depth: usize) -> String {
+            let mut lines: ::std::vec::Vec<::std::string::String> = Vec::new();
+            #(#per_field_snippets)*
             lines.join("\n")
         }
-    })
+    };
+
+    Ok(expanded)
 }

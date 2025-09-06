@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{DeriveInput, Expr};
+use syn::{DeriveInput, Expr, Type};
 
 use darling::FromField;
 
@@ -33,6 +33,9 @@ pub fn handler(ast: DeriveInput) -> TokenStream {
     // 收集字段配置信息
     let mut field_configs = Vec::new();
     let mut field_assignments = Vec::new();
+
+    // 用于计算最大嵌套深度的每个字段深度表达式
+    let mut depth_exprs: Vec<proc_macro2::TokenStream> = Vec::new();
 
     for field in &data.fields {
         let ident = field.ident.as_ref().expect("named fields only");
@@ -70,6 +73,21 @@ pub fn handler(ast: DeriveInput) -> TokenStream {
         println!("类型: {:?}", field.ty);
         println!("注释: {:?}", opts.note);
         println!("默认值: {:?}", default_value);
+
+        // 生成深度表达式：基础类型 -> 0，其它类型 -> <T>::__ELP_DEPTH
+        let field_ty = &field.ty;
+        let is_primitive = match get_type_last_ident(field_ty).as_deref() {
+            Some("String") | Some("str") | Some("i8") | Some("i16") | Some("i32") | Some("i64")
+            | Some("i128") | Some("isize") | Some("u8") | Some("u16") | Some("u32")
+            | Some("u64") | Some("u128") | Some("usize") | Some("f32") | Some("f64")
+            | Some("bool") => true,
+            _ => false,
+        };
+        if is_primitive {
+            depth_exprs.push(quote! { 0usize });
+        } else {
+            depth_exprs.push(quote! { 1usize + <#field_ty>::__ELP_CHILD_DEPTH });
+        }
     }
 
     // 收集字段引用
@@ -84,6 +102,12 @@ pub fn handler(ast: DeriveInput) -> TokenStream {
         Err(e) => return e.to_compile_error().into(),
     };
 
+    // 折叠求最大值表达式：(((0 max d1) max d2) ...)
+    let mut max_fold: proc_macro2::TokenStream = quote! { 0usize };
+    for de in depth_exprs {
+        max_fold = quote! { Self::__elp_max(#max_fold, #de) };
+    }
+
     let expanded = quote! {
         impl #name {
             pub fn new() -> Self {
@@ -95,6 +119,12 @@ pub fn handler(ast: DeriveInput) -> TokenStream {
             #from_toml_impl
 
             #to_toml_impl
+
+            const fn __elp_max(a: usize, b: usize) -> usize { if a > b { a } else { b } }
+            // 子结构体最大层数：基础类型=0，结构体=1+子层数
+            pub const __ELP_CHILD_DEPTH: usize = { #max_fold };
+            // 限制：最大两层（顶层+一层子结构体）；第三层会使子深度>2，此处触发编译错误
+            pub const __ELP_ASSERT: [(); (Self::__ELP_CHILD_DEPTH <= 2) as usize - 1] = [];
         }
 
         impl Default for #name {
@@ -105,4 +135,13 @@ pub fn handler(ast: DeriveInput) -> TokenStream {
     };
 
     return TokenStream::from(expanded);
+}
+
+// 获取类型最后一个标识符（类型名）
+fn get_type_last_ident(ty: &Type) -> Option<String> {
+    if let Type::Path(tp) = ty {
+        tp.path.segments.last().map(|s| s.ident.to_string())
+    } else {
+        None
+    }
 }
