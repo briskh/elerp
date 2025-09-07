@@ -156,3 +156,6 @@ fn get_type_last_ident(ty: &Type) -> Option<String> {
         None
     }
 }
+
+#[cfg(test)]
+mod tests;
