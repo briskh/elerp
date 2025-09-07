@@ -24,9 +24,8 @@ pub trait Configuration: Sized + Serialize + for<'de> Deserialize<'de> {
     /// 
     /// ```rust,no_run
     /// use libelp::{Configuration, ConfigurationResult};
-    /// use serde::{Deserialize, Serialize};
     /// 
-    /// #[derive(Configuration, Serialize, Deserialize)]
+    /// #[derive(Configuration)]
     /// struct AppConfig {
     ///     #[config(default = "localhost", note = "Server hostname")]
     ///     host: String,
@@ -56,9 +55,8 @@ pub trait Configuration: Sized + Serialize + for<'de> Deserialize<'de> {
     /// 
     /// ```rust,no_run
     /// use libelp::{Configuration, ConfigurationResult};
-    /// use serde::{Deserialize, Serialize};
     /// 
-    /// #[derive(Configuration, Serialize, Deserialize)]
+    /// #[derive(Configuration)]
     /// struct AppConfig {
     ///     #[config(default = "localhost", note = "Server hostname")]
     ///     host: String,

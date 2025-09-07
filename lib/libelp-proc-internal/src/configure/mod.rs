@@ -90,6 +90,73 @@ pub fn handler(ast: DeriveInput) -> TokenStream {
     // Collect field references
     let fields: Vec<&syn::Field> = data.fields.iter().collect();
 
+    // --- Auto-impl serde Serialize/Deserialize ---
+    // Build helper struct fields for Serialize (borrowed fields)
+    let ser_helper_fields: Vec<proc_macro2::TokenStream> = fields
+        .iter()
+        .map(|f| {
+            let ident = f.ident.as_ref().expect("named fields only");
+            let ty = &f.ty;
+            quote! { #ident: &'__elp_a #ty, }
+        })
+        .collect();
+
+    // Initialize helper for Serialize
+    let ser_helper_inits: Vec<proc_macro2::TokenStream> = fields
+        .iter()
+        .map(|f| {
+            let ident = f.ident.as_ref().expect("named fields only");
+            quote! { #ident: &self.#ident, }
+        })
+        .collect();
+
+    let serialize_impl = quote! {
+        impl serde::Serialize for #name {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+            {
+                #[derive(serde::Serialize)]
+                struct __ElpSerdeHelper<'__elp_a> { #( #ser_helper_fields )* }
+                let helper = __ElpSerdeHelper { #( #ser_helper_inits )* };
+                helper.serialize(serializer)
+            }
+        }
+    };
+
+    // Build helper struct fields for Deserialize (owned fields)
+    let de_helper_fields: Vec<proc_macro2::TokenStream> = fields
+        .iter()
+        .map(|f| {
+            let ident = f.ident.as_ref().expect("named fields only");
+            let ty = &f.ty;
+            quote! { #ident: #ty, }
+        })
+        .collect();
+
+    // Reconstruct Self from helper
+    let de_self_inits: Vec<proc_macro2::TokenStream> = fields
+        .iter()
+        .map(|f| {
+            let ident = f.ident.as_ref().expect("named fields only");
+            quote! { #ident: helper.#ident, }
+        })
+        .collect();
+
+    let deserialize_impl = quote! {
+        impl<'de> serde::Deserialize<'de> for #name {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                #[derive(serde::Deserialize)]
+                struct __ElpSerdeHelper { #( #de_helper_fields )* }
+                let helper = __ElpSerdeHelper::deserialize(deserializer)?;
+                Ok(Self { #( #de_self_inits )* })
+            }
+        }
+    };
+
     // Generate from_toml method
     let from_toml_impl = toml_utils::generate_from_toml_impl(name, &fields);
 
@@ -140,6 +207,9 @@ pub fn handler(ast: DeriveInput) -> TokenStream {
                 Self::new()
             }
         }
+
+        #serialize_impl
+        #deserialize_impl
 
         impl libelp::Configuration for #name {
             fn new() -> Self {

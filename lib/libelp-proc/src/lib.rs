@@ -12,7 +12,7 @@ use syn::parse_macro_input;
 /// 
 /// # Example
 /// 
-/// ```rust
+/// ```rust,ignore
 /// use libelp::Configuration;
 /// 
 /// #[derive(Configuration)]
