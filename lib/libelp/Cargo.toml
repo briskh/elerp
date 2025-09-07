@@ -5,3 +5,14 @@ edition = "2024"
 
 [dependencies]
 libelp-proc = { path = "../libelp-proc" }
+thiserror = "2.0"
+toml = "0.8"
+serde = { version = "1.0", features = ["derive"] }
+regex = "1.0"
+
+[dev-dependencies]
+serde = { version = "1.0", features = ["derive"] }
+
+[[example]]
+name = "simple_example"
+path = "examples/simple_example.rs"

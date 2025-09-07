@@ -1,7 +1,8 @@
 use libelp::Configuration;
+use serde::{Deserialize, Serialize};
 
 #[allow(dead_code)]
-#[derive(Configuration)]
+#[derive(Configuration, Serialize, Deserialize)]
 struct Test {
     #[config(default = "localhost", note = "redis host")]
     host: String,
@@ -10,7 +11,7 @@ struct Test {
 }
 
 #[allow(dead_code)]
-#[derive(Configuration, Debug)]
+#[derive(Configuration, Serialize, Deserialize, Debug)]
 struct Redis {
     #[config(default = "localhost", note = "test host")]
     host: String,
@@ -18,7 +19,7 @@ struct Redis {
     port: u16,
 }
 
-#[derive(Configuration, Debug)]
+#[derive(Configuration, Serialize, Deserialize, Debug)]
 struct Database {
     #[config(default = "localhost", note = "db host")]
     host: String,
@@ -26,7 +27,7 @@ struct Database {
     port: u16,
 }
 
-#[derive(Configuration, Debug)]
+#[derive(Configuration, Serialize, Deserialize, Debug)]
 struct Config {
     #[config(default = true, note = "enable feature")]
     feature: bool,

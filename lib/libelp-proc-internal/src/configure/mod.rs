@@ -140,6 +140,12 @@ pub fn handler(ast: DeriveInput) -> TokenStream {
                 Self::new()
             }
         }
+
+        impl libelp::Configuration for #name {
+            fn new() -> Self {
+                Self::new()
+            }
+        }
     };
 
     return TokenStream::from(expanded);

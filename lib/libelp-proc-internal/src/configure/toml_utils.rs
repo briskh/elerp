@@ -177,7 +177,8 @@ pub fn generate_to_toml_impl(
                 Err(e) => return Err(e),
             }
         } else {
-            quote! { Default::default() }
+            // Use explicit type annotation to help with type inference
+            quote! { <#field.ty>::default() }
         };
 
         let is_primitive = matches!(
