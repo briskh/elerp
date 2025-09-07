@@ -39,3 +39,8 @@ fn main() {
     let config = Config::new();
     println!("{}", config.to_toml());
 }
+
+#[test]
+fn test_config() {
+    assert_eq!(main(), ());
+}

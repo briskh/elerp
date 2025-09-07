@@ -20,9 +20,9 @@ pub fn handler(ast: DeriveInput) -> TokenStream {
     let name = &ast.ident;
 
     let data = match &ast.data {
-        // 检查是否为结构体,如果为结构体,则继续处理
+        // Check if it's a struct, if so, continue processing
         syn::Data::Struct(s) => s,
-        // 如果为其他类型,则返回错误
+        // If it's another type, return error
         _ => {
             return syn::Error::new_spanned(name, "this derive macro only supports structs")
                 .to_compile_error()
@@ -30,11 +30,11 @@ pub fn handler(ast: DeriveInput) -> TokenStream {
         }
     };
 
-    // 收集字段配置信息
+    // Collect field configuration information
     let mut field_configs = Vec::new();
     let mut field_assignments = Vec::new();
 
-    // 用于计算最大嵌套深度的每个字段深度表达式
+    // Depth expression for each field to calculate maximum nesting depth
     let mut depth_exprs: Vec<proc_macro2::TokenStream> = Vec::new();
 
     for field in &data.fields {
@@ -43,38 +43,31 @@ pub fn handler(ast: DeriveInput) -> TokenStream {
 
         let default_value = match opts.default {
             Some(ref default_expr) => {
-                // 使用独立的默认值处理模块
+                // Use independent default value processing module
                 match process_default_value::process_default_value(default_expr, &field.ty) {
-                    Ok(parsed_token) => {
-                        println!("成功处理默认值: {:?} -> {:?}", default_expr, parsed_token);
-                        parsed_token
-                    }
+                    Ok(parsed_token) => parsed_token,
                     Err(e) => {
-                        // 如果处理失败，返回编译错误
+                        // If processing fails, return compile error
                         return e.to_compile_error().into();
                     }
                 }
             }
             None => {
-                // 没有默认值，使用 Default::default()
+                // No default value, use Default::default()
                 quote! { Default::default() }
             }
         };
 
-        // 收集字段配置信息用于TOML生成
+        // Collect field configuration information for TOML generation
         field_configs.push((field.clone(), opts.default.clone(), opts.note.clone()));
 
-        // 生成字段赋值
+        // Generate field assignment
         field_assignments.push(quote! {
             #ident: #default_value,
         });
 
-        println!("字段: {:?}", ident);
-        println!("类型: {:?}", field.ty);
-        println!("注释: {:?}", opts.note);
-        println!("默认值: {:?}", default_value);
 
-        // 生成深度表达式：基础类型 -> 0，其它类型 -> <T>::__ELP_DEPTH
+        // Generate depth expression: basic types -> 0, other types -> <T>::__ELP_DEPTH
         let field_ty = &field.ty;
         let is_primitive = match get_type_last_ident(field_ty).as_deref() {
             Some("String") | Some("str") | Some("i8") | Some("i16") | Some("i32") | Some("i64")
@@ -90,19 +83,19 @@ pub fn handler(ast: DeriveInput) -> TokenStream {
         }
     }
 
-    // 收集字段引用
+    // Collect field references
     let fields: Vec<&syn::Field> = data.fields.iter().collect();
 
-    // 生成from_toml方法
+    // Generate from_toml method
     let from_toml_impl = toml_utils::generate_from_toml_impl(name, &fields);
 
-    // 生成to_toml方法
+    // Generate to_toml method
     let to_toml_impl = match toml_utils::generate_to_toml_impl(name, &fields, &field_configs) {
         Ok(impl_code) => impl_code,
         Err(e) => return e.to_compile_error().into(),
     };
 
-    // 折叠求最大值表达式：(((0 max d1) max d2) ...)
+    // Fold to find maximum expression: (((0 max d1) max d2) ...)
     let mut max_fold: proc_macro2::TokenStream = quote! { 0usize };
     for de in depth_exprs {
         max_fold = quote! { Self::__elp_max(#max_fold, #de) };
@@ -121,20 +114,20 @@ pub fn handler(ast: DeriveInput) -> TokenStream {
             #to_toml_impl
 
             const fn __elp_max(a: usize, b: usize) -> usize { if a > b { a } else { b } }
-            // 子结构体最大层数：基础类型=0，结构体=1+子层数
+            // Maximum depth of child structs: basic types=0, structs=1+child depth
             pub const __ELP_CHILD_DEPTH: usize = { #max_fold };
-            // 限制：最大两层（顶层+一层子结构体）；超过则给出友好的错误信息
+            // Limit: maximum two levels (top level + one level of nested structs); provide friendly error message if exceeded
             pub const __ELP_ASSERT_MSG: () = {
                 if Self::__ELP_CHILD_DEPTH > 1 {
                     panic!(concat!(
-                        "配置结构体 '",
+                        "Configuration struct '",
                         stringify!(#name),
-                        "' 嵌套层级超过允许的两层（顶层 + 一层子结构体）"
+                        "' nesting level exceeds allowed two levels (top level + one level of nested structs)"
                     ));
                 }
                 ()
             };
-            // 强制在类型层面引用上面的常量，确保编译期一定求值并报错
+            // Force reference to the above constant at type level to ensure compile-time evaluation and error reporting
         pub const __ELP_ENFORCER: [(); { let _ = Self::__ELP_ASSERT_MSG; 1 }] = [(); { let _ = Self::__ELP_ASSERT_MSG; 1 }];
         }
 
@@ -148,7 +141,7 @@ pub fn handler(ast: DeriveInput) -> TokenStream {
     return TokenStream::from(expanded);
 }
 
-// 获取类型最后一个标识符（类型名）
+// Get the last identifier of a type (type name)
 fn get_type_last_ident(ty: &Type) -> Option<String> {
     if let Type::Path(tp) = ty {
         tp.path.segments.last().map(|s| s.ident.to_string())

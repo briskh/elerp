@@ -1,7 +1,7 @@
 use libelp_proc_internal as internal;
 use proc_macro::TokenStream;
-use quote::quote;
-use syn::LitStr;
+// use quote::quote;
+// use syn::LitStr;
 
 use syn::parse_macro_input;
 
@@ -11,12 +11,3 @@ pub fn derive_configuration(input: TokenStream) -> TokenStream {
     return internal::configure::handler(ast).into();
 }
 
-#[proc_macro]
-pub fn make_answer(input: TokenStream) -> TokenStream {
-    let lit: LitStr = syn::parse(input).unwrap();
-    let msg = lit.value();
-    let expanded = quote! {
-        fn answer() -> &'static str { #msg }
-    };
-    expanded.into()
-}

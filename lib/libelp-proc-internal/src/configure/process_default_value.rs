@@ -2,15 +2,15 @@ use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::{Expr, Lit, LitStr, Type};
 
-/// 处理默认值表达式，检查类型匹配并进行必要的转换
+/// Process default value expression, check type matching and perform necessary conversions
 pub fn process_default_value(
     default_expr: &Expr,
     field_ty: &Type,
 ) -> Result<TokenStream, syn::Error> {
-    // 获取字段类型名称
+    // Get field type name
     let type_name = get_type_name(field_ty)?;
 
-    // 处理字面量表达式
+    // Process literal expressions
     if let Expr::Lit(lit) = default_expr {
         match &lit.lit {
             Lit::Str(str_lit) => handle_string_literal(str_lit, &type_name),
@@ -19,15 +19,15 @@ pub fn process_default_value(
             Lit::Bool(bool_lit) => handle_bool_literal(bool_lit, &type_name),
             _ => Err(syn::Error::new_spanned(
                 field_ty,
-                format!("不支持的字面量类型: {:?}", lit.lit),
+                format!("Unsupported literal type: {:?}", lit.lit),
             )),
         }
     } else if let Expr::Path(path_expr) = default_expr {
-        // 处理路径表达式（如标识符）
+        // Process path expressions (such as identifiers)
         if let Some(segment) = path_expr.path.segments.last() {
             let ident = &segment.ident;
             match type_name.as_str() {
-                // 将标识符内容当作字符串字面量处理
+                // Treat identifier content as string literal
                 "String" => {
                     let lit = LitStr::new(&ident.to_string(), Span::call_site());
                     Ok(quote! { #lit.to_string() })
@@ -39,29 +39,29 @@ pub fn process_default_value(
                 _ => Ok(quote! { #ident }),
             }
         } else {
-            Err(syn::Error::new_spanned(default_expr, "无法解析路径表达式"))
+            Err(syn::Error::new_spanned(default_expr, "Cannot parse path expression"))
         }
     } else {
-        // 对于其他非字面量表达式，直接使用
+        // For other non-literal expressions, use directly
         Ok(quote! { #default_expr })
     }
 }
 
-/// 获取类型名称
+/// Get type name
 fn get_type_name(ty: &Type) -> Result<String, syn::Error> {
     match ty {
         Type::Path(type_path) => {
             if let Some(segment) = type_path.path.segments.last() {
                 Ok(segment.ident.to_string())
             } else {
-                Err(syn::Error::new_spanned(ty, "无法识别类型路径"))
+                Err(syn::Error::new_spanned(ty, "Cannot identify type path"))
             }
         }
-        _ => Err(syn::Error::new_spanned(ty, "不支持的类型格式")),
+        _ => Err(syn::Error::new_spanned(ty, "Unsupported type format")),
     }
 }
 
-/// 处理字符串字面量
+/// Handle string literals
 fn handle_string_literal(
     str_lit: &syn::LitStr,
     type_name: &str,
@@ -71,12 +71,12 @@ fn handle_string_literal(
         "str" => Ok(quote! { #str_lit }),
         _ => Err(syn::Error::new_spanned(
             str_lit,
-            format!("字符串字面量不能用于类型 {}", type_name),
+            format!("String literal cannot be used for type {}", type_name),
         )),
     }
 }
 
-/// 处理整数字面量
+/// Handle integer literals
 fn handle_int_literal(
     int_lit: &syn::LitInt,
     type_name: &str,
@@ -99,12 +99,12 @@ fn handle_int_literal(
         "usize" => parse_and_quote::<usize>(value_str, field_ty),
         _ => Err(syn::Error::new_spanned(
             field_ty,
-            format!("整数字面量不能用于类型 {}", type_name),
+            format!("Integer literal cannot be used for type {}", type_name),
         )),
     }
 }
 
-/// 处理浮点字面量
+/// Handle float literals
 fn handle_float_literal(
     float_lit: &syn::LitFloat,
     type_name: &str,
@@ -117,12 +117,12 @@ fn handle_float_literal(
         "f64" => parse_and_quote::<f64>(value_str, field_ty),
         _ => Err(syn::Error::new_spanned(
             field_ty,
-            format!("浮点字面量不能用于类型 {}", type_name),
+            format!("Float literal cannot be used for type {}", type_name),
         )),
     }
 }
 
-/// 处理布尔字面量
+/// Handle boolean literals
 fn handle_bool_literal(
     bool_lit: &syn::LitBool,
     type_name: &str,
@@ -131,12 +131,12 @@ fn handle_bool_literal(
         "bool" => Ok(quote! { #bool_lit }),
         _ => Err(syn::Error::new_spanned(
             bool_lit,
-            format!("布尔字面量不能用于类型 {}", type_name),
+            format!("Boolean literal cannot be used for type {}", type_name),
         )),
     }
 }
 
-/// 解析字符串为指定类型并生成 TokenStream
+/// Parse string to specified type and generate TokenStream
 fn parse_and_quote<T>(value_str: &str, field_ty: &Type) -> Result<TokenStream, syn::Error>
 where
     T: std::str::FromStr + quote::ToTokens,
@@ -146,7 +146,7 @@ where
         Ok(parsed) => Ok(quote! { #parsed }),
         Err(e) => Err(syn::Error::new_spanned(
             field_ty,
-            format!("无法解析 '{}' 为类型: {}", value_str, e),
+            format!("Cannot parse '{}' as type: {}", value_str, e),
         )),
     }
 }
@@ -157,7 +157,7 @@ mod tests {
     use quote::quote;
     use syn::{Expr, Lit, LitBool, LitFloat, LitInt, LitStr, Type, parse_quote};
 
-    // 辅助函数：创建类型
+    // Helper function: create type
     fn create_type(type_name: &str) -> Type {
         match type_name {
             "String" => parse_quote! { String },
@@ -183,7 +183,7 @@ mod tests {
         }
     }
 
-    // 辅助函数：创建字符串字面量表达式
+    // Helper function: create string literal expression
     fn create_string_expr(value: &str) -> Expr {
         Expr::Lit(syn::ExprLit {
             attrs: vec![],
@@ -191,7 +191,7 @@ mod tests {
         })
     }
 
-    // 辅助函数：创建整数字面量表达式
+    // Helper function: create integer literal expression
     fn create_int_expr(value: &str) -> Expr {
         Expr::Lit(syn::ExprLit {
             attrs: vec![],
@@ -199,7 +199,7 @@ mod tests {
         })
     }
 
-    // 辅助函数：创建浮点字面量表达式
+    // Helper function: create float literal expression
     fn create_float_expr(value: &str) -> Expr {
         Expr::Lit(syn::ExprLit {
             attrs: vec![],
@@ -207,7 +207,7 @@ mod tests {
         })
     }
 
-    // 辅助函数：创建布尔字面量表达式
+    // Helper function: create boolean literal expression
     fn create_bool_expr(value: bool) -> Expr {
         Expr::Lit(syn::ExprLit {
             attrs: vec![],
@@ -215,7 +215,7 @@ mod tests {
         })
     }
 
-    // 辅助函数：创建非字面量表达式
+    // Helper function: create non-literal expression
     fn create_non_literal_expr() -> Expr {
         parse_quote! { some_function() }
     }
@@ -255,7 +255,7 @@ mod tests {
         assert!(result.is_err());
 
         let error = result.unwrap_err();
-        assert!(error.to_string().contains("字符串字面量不能用于类型 i32"));
+        assert!(error.to_string().contains("String literal cannot be used for type i32"));
     }
 
     #[test]
@@ -267,7 +267,7 @@ mod tests {
         assert!(result.is_ok());
 
         let tokens = result.unwrap();
-        // 注意：quote! 会生成带类型后缀的代码，如 "42i32"
+        // Note: quote! generates code with type suffix, e.g., "42i32"
         let expected = quote! { 42i32 };
         assert_eq!(tokens.to_string(), expected.to_string());
     }
@@ -294,7 +294,7 @@ mod tests {
         assert!(result.is_err());
 
         let error = result.unwrap_err();
-        assert!(error.to_string().contains("整数字面量不能用于类型 String"));
+        assert!(error.to_string().contains("Integer literal cannot be used for type String"));
     }
 
     #[test]
@@ -306,7 +306,7 @@ mod tests {
         assert!(result.is_err());
 
         let error = result.unwrap_err();
-        assert!(error.to_string().contains("无法解析 '1000' 为类型"));
+        assert!(error.to_string().contains("Cannot parse '1000' as type"));
     }
 
     #[test]
@@ -344,7 +344,7 @@ mod tests {
         assert!(result.is_err());
 
         let error = result.unwrap_err();
-        assert!(error.to_string().contains("浮点字面量不能用于类型 i32"));
+        assert!(error.to_string().contains("Float literal cannot be used for type i32"));
     }
 
     #[test]
@@ -382,7 +382,7 @@ mod tests {
         assert!(result.is_err());
 
         let error = result.unwrap_err();
-        assert!(error.to_string().contains("布尔字面量不能用于类型 String"));
+        assert!(error.to_string().contains("Boolean literal cannot be used for type String"));
     }
 
     #[test]
@@ -419,7 +419,7 @@ mod tests {
         let ty = parse_quote! { &str };
         let result = get_type_name(&ty);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("不支持的类型格式"));
+        assert!(result.unwrap_err().to_string().contains("Unsupported type format"));
     }
 
     #[test]
@@ -453,7 +453,7 @@ mod tests {
             result
                 .unwrap_err()
                 .to_string()
-                .contains("字符串字面量不能用于类型 i32")
+                .contains("String literal cannot be used for type i32")
         );
     }
 
@@ -462,7 +462,7 @@ mod tests {
         let int_lit = LitInt::new("42", proc_macro2::Span::call_site());
         let ty = create_type("i32");
 
-        // 测试所有整数类型
+        // Test all integer types
         let types = [
             "i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128", "usize",
         ];
@@ -483,7 +483,7 @@ mod tests {
             result
                 .unwrap_err()
                 .to_string()
-                .contains("整数字面量不能用于类型 String")
+                .contains("Integer literal cannot be used for type String")
         );
     }
 
@@ -521,7 +521,7 @@ mod tests {
             result
                 .unwrap_err()
                 .to_string()
-                .contains("浮点字面量不能用于类型 i32")
+                .contains("Float literal cannot be used for type i32")
         );
     }
 
@@ -556,7 +556,7 @@ mod tests {
             result
                 .unwrap_err()
                 .to_string()
-                .contains("布尔字面量不能用于类型 String")
+                .contains("Boolean literal cannot be used for type String")
         );
     }
 
@@ -580,13 +580,13 @@ mod tests {
             result
                 .unwrap_err()
                 .to_string()
-                .contains("无法解析 'abc' 为类型")
+                .contains("Cannot parse 'abc' as type")
         );
     }
 
     #[test]
     fn test_unsupported_literal_type() {
-        // 创建一个不支持的字符字面量
+        // Create an unsupported character literal
         let expr = Expr::Lit(syn::ExprLit {
             attrs: vec![],
             lit: Lit::Char(syn::LitChar::new('a', proc_macro2::Span::call_site())),
@@ -599,7 +599,7 @@ mod tests {
             result
                 .unwrap_err()
                 .to_string()
-                .contains("不支持的字面量类型")
+                .contains("Unsupported literal type")
         );
     }
 

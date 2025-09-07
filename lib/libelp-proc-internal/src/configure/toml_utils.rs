@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Expr, Field, Lit, Type};
 
-/// 将字段值转换为TOML字符串表示
+/// Convert field value to TOML string representation
 pub fn field_value_to_toml_string(
     _field: &Field,
     default_expr: &Option<Expr>,
@@ -19,11 +19,11 @@ pub fn field_value_to_toml_string(
                 Lit::Bool(bool_lit) => Ok(bool_lit.value().to_string()),
                 _ => Err(syn::Error::new_spanned(
                     field_ty,
-                    format!("不支持的字面量类型: {:?}", lit.lit),
+                    format!("Unsupported literal type: {:?}", lit.lit),
                 )),
             }
         } else if let Expr::Path(path_expr) = default_expr {
-            // 当字符串默认值被解析为路径标识符时（如 localhost）
+            // When string default value is parsed as path identifier (e.g., localhost)
             if let Some(segment) = path_expr.path.segments.last() {
                 let ident_text = segment.ident.to_string();
                 match type_name.as_str() {
@@ -34,11 +34,11 @@ pub fn field_value_to_toml_string(
                 Ok("default_value".to_string())
             }
         } else {
-            // 对于其他非字面量表达式，返回占位符
+            // For other non-literal expressions, return placeholder
             Ok("default_value".to_string())
         }
     } else {
-        // 没有默认值，根据类型返回默认的TOML表示
+        // No default value, return default TOML representation based on type
         match type_name.as_str() {
             "String" => Ok("\"\"".to_string()),
             "str" => Ok("\"\"".to_string()),
@@ -51,21 +51,21 @@ pub fn field_value_to_toml_string(
     }
 }
 
-/// 获取类型名称
+/// Get type name
 fn get_type_name(ty: &Type) -> Result<String, syn::Error> {
     match ty {
         Type::Path(type_path) => {
             if let Some(segment) = type_path.path.segments.last() {
                 Ok(segment.ident.to_string())
             } else {
-                Err(syn::Error::new_spanned(ty, "无法识别类型路径"))
+                Err(syn::Error::new_spanned(ty, "Cannot identify type path"))
             }
         }
-        _ => Err(syn::Error::new_spanned(ty, "不支持的类型格式")),
+        _ => Err(syn::Error::new_spanned(ty, "Unsupported type format")),
     }
 }
 
-/// 生成from_toml方法的实现
+/// Generate from_toml method implementation
 pub fn generate_from_toml_impl(_struct_name: &syn::Ident, fields: &[&Field]) -> TokenStream {
     let field_assignments: Vec<TokenStream> = fields
         .iter()
@@ -74,7 +74,7 @@ pub fn generate_from_toml_impl(_struct_name: &syn::Ident, fields: &[&Field]) -> 
             let field_type = &field.ty;
             let type_name = get_type_name(field_type).ok()?;
 
-            // 根据类型生成不同的解析逻辑
+            // Generate different parsing logic based on type
             let parse_logic = match type_name.as_str() {
                 "String" => quote! {
                     toml_value.get(stringify!(#field_name))
@@ -122,7 +122,7 @@ pub fn generate_from_toml_impl(_struct_name: &syn::Ident, fields: &[&Field]) -> 
                         .unwrap_or_default()
                 },
                 _ => quote! {
-                    // 嵌套结构体（最多两层）：从子表递归解析
+                    // Nested struct (max two levels): recursively parse from sub-table
                     match toml_value.get(stringify!(#field_name)).and_then(|v| v.as_table()) {
                         Some(tbl) => {
                             let sub_str = ::toml::to_string(tbl).unwrap_or_default();
@@ -150,20 +150,20 @@ pub fn generate_from_toml_impl(_struct_name: &syn::Ident, fields: &[&Field]) -> 
     }
 }
 
-/// 生成to_toml方法的实现
+/// Generate to_toml method implementation
 pub fn generate_to_toml_impl(
     _struct_name: &syn::Ident,
     _fields: &[&Field],
     field_configs: &[(Field, Option<Expr>, Option<String>)],
 ) -> Result<TokenStream, syn::Error> {
-    // 为每个字段生成分支代码
+    // Generate branch code for each field
     let mut per_field_snippets: Vec<TokenStream> = Vec::new();
 
     for (field, default_expr, note) in field_configs {
         let field_ident = field
             .ident
             .as_ref()
-            .ok_or_else(|| syn::Error::new_spanned(field, "字段必须有名称"))?;
+            .ok_or_else(|| syn::Error::new_spanned(field, "Field must have a name"))?;
         let type_name = get_type_name(&field.ty)?;
         let note_text = note.as_deref().unwrap_or("");
         let default_value_lit = field_value_to_toml_string(field, default_expr, &field.ty)?;
@@ -200,9 +200,9 @@ pub fn generate_to_toml_impl(
 
         let snippet = if is_primitive {
             quote! {
-                // 注释
-                lines.push(format!("# {}, {}, 默认值: {}", #note_text, #type_name, #default_value_lit));
-                // 值行
+                // Comment
+                lines.push(format!("# {}, {}, default: {}", #note_text, #type_name, #default_value_lit));
+                // Value line
                 {
                     let __is_default = self.#field_ident == #default_compare_tokens;
                     let __line = {
@@ -215,7 +215,7 @@ pub fn generate_to_toml_impl(
                 lines.push(String::new());
             }
         } else {
-            // 嵌套结构体：最多两层。深度为0时添加段名；深度>=1时直接拼接子内容（其内部会自行截止到两层）。
+            // Nested struct: max two levels. Add section name when depth is 0; directly concatenate child content when depth >= 1 (it will self-limit to two levels internally).
             quote! {
                 if __depth == 0 {
                     lines.push(format!("[{}]", stringify!(#field_ident)));
