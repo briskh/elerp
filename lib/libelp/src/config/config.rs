@@ -178,6 +178,10 @@ fn extract_toml_error_location(error: &toml::de::Error) -> (Option<usize>, Optio
 mod tests {
     use super::*;
     use serde::{Deserialize, Serialize};
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::collections::HashMap;
 
     #[derive(Serialize, Deserialize, PartialEq, Debug)]
     struct TestConfig {
@@ -241,5 +245,186 @@ mod tests {
             port: 0,
         };
         assert!(invalid_config.validate().is_err());
+    }
+
+    fn unique_temp_path(prefix: &str) -> PathBuf {
+        let mut p = std::env::temp_dir();
+        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        p.push(format!("{}_{}.toml", prefix, nanos));
+        p
+    }
+
+    #[test]
+    fn test_save_and_load_file_success() {
+        let path = unique_temp_path("libelp_cfg_io_ok");
+        // Save
+        TestConfig { host: "example".to_string(), port: 4242 }
+            .save_to_file(&path)
+            .expect("save_to_file should succeed");
+
+        // Load
+        let loaded = TestConfig::load_from_file(&path).expect("load_from_file should succeed");
+        assert_eq!(loaded.host, "example");
+        assert_eq!(loaded.port, 4242);
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_load_with_defaults_missing_file_returns_default() {
+        let path = unique_temp_path("libelp_cfg_missing");
+        // Ensure file does not exist
+        let _ = fs::remove_file(&path);
+
+        let loaded = TestConfig::load_with_defaults(&path).expect("should return defaults");
+        assert_eq!(loaded.host, "localhost");
+        assert_eq!(loaded.port, 8080);
+    }
+
+    #[test]
+    fn test_load_with_defaults_uses_file_when_present() {
+        let path = unique_temp_path("libelp_cfg_present");
+        let toml_str = "host = \"from_file\"\nport = 9001\n";
+        fs::write(&path, toml_str).unwrap();
+
+        let loaded = TestConfig::load_with_defaults(&path).expect("should load from file");
+        assert_eq!(loaded.host, "from_file");
+        assert_eq!(loaded.port, 9001);
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_from_toml_string_error_contains_location() {
+        // Type mismatch to trigger parse error with location
+        let toml_str = r#"
+            host = "ok"
+            port = "not_a_number"
+        "#;
+        let err = TestConfig::from_toml_string(toml_str).unwrap_err();
+        match err {
+            ConfigurationError::TomlParseError { line, .. } => {
+                assert!(line.is_some(), "expected line info in parse error");
+            }
+            other => panic!("unexpected error: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_save_to_file_error_on_directory() {
+        // Use temp dir path itself as the destination to force write error
+        let dir = std::env::temp_dir();
+        let cfg = TestConfig { host: "x".to_string(), port: 1 };
+        let res = cfg.save_to_file(&dir);
+        assert!(matches!(res, Err(ConfigurationError::FileError { .. })), "expected FileError");
+    }
+
+    #[derive(Serialize, Deserialize, PartialEq, Debug)]
+    struct InvalidDefaultConfig {
+        host: String,
+        port: u16,
+    }
+
+    impl Configuration for InvalidDefaultConfig {
+        fn new() -> Self {
+            Self { host: "x".to_string(), port: 0 }
+        }
+
+        fn validate(&self) -> ConfigurationResult<()> {
+            if self.port == 0 {
+                return Err(ConfigurationError::validation_error("Port cannot be zero", Some("port".to_string())));
+            }
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_load_with_defaults_invalid_default_fails_validation() {
+        let path = unique_temp_path("libelp_cfg_invalid_default");
+        let _ = fs::remove_file(&path);
+        let res = InvalidDefaultConfig::load_with_defaults(&path);
+        assert!(matches!(res, Err(ConfigurationError::ValidationError { .. })), "expected ValidationError");
+    }
+
+    #[derive(libelp_proc::Configuration, PartialEq, Debug)]
+    struct ChildCfg {
+        #[config(default = "child", note = "child name")]
+        name: String,
+        #[config(default = 1, note = "child version")]
+        version: u16,
+    }
+
+    #[derive(libelp_proc::Configuration, PartialEq, Debug)]
+    struct ParentCfg {
+        #[config(default = "parent", note = "parent name")]
+        name: String,
+        child: ChildCfg,
+    }
+
+    #[test]
+    fn test_nested_to_toml_contains_section_and_comments() {
+        let p = ParentCfg::new();
+        let out = p.to_toml();
+        assert!(out.contains("# parent name"));
+        assert!(out.contains("[child]"));
+        assert!(out.contains("# child name"));
+        // defaults should be commented out
+        let has_commented_parent = out.lines().any(|l| l.trim_start().starts_with("# name = \"parent\""));
+        let has_commented_child = out.lines().any(|l| l.trim_start().starts_with("# name = \"child\""));
+        assert!(has_commented_parent, "expected commented parent default line");
+        assert!(has_commented_child, "expected commented child default line");
+    }
+
+    #[test]
+    fn test_nested_from_toml_parses_child_values() {
+        let s = r#"
+            name = "root"
+
+            [child]
+            name = "c1"
+            version = 2
+        "#;
+        let p = ParentCfg::from_toml(s).expect("from_toml should succeed");
+        assert_eq!(p.name, "root");
+        assert_eq!(p.child.name, "c1");
+        assert_eq!(p.child.version, 2);
+    }
+
+    #[test]
+    fn test_load_with_defaults_invalid_file_propagates_parse_error() {
+        let path = unique_temp_path("libelp_cfg_invalid_file");
+        // invalid: port should be integer
+        let toml_str = "host = \"ok\"\nport = \"oops\"\n";
+        fs::write(&path, toml_str).unwrap();
+
+        let res = TestConfig::load_with_defaults(&path);
+        assert!(matches!(res, Err(ConfigurationError::TomlParseError { .. })), "expected TomlParseError, got: {:?}", res);
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[derive(Serialize, Deserialize, Debug)]
+    struct MapKeyConfig {
+        map: HashMap<i32, String>,
+    }
+
+    impl Configuration for MapKeyConfig {
+        fn new() -> Self { Self { map: HashMap::new() } }
+    }
+
+    #[test]
+    fn test_to_toml_string_serialize_error_for_non_string_map_keys() {
+        // TOML requires string keys; HashMap<i32, String> fails at serialization time
+        let mut cfg = MapKeyConfig::new();
+        cfg.map.insert(1, "a".to_string());
+        let err = cfg.to_toml_string().unwrap_err();
+        assert!(matches!(err, ConfigurationError::TomlSerializeError { .. }));
+    }
+
+    #[test]
+    fn test_default_validate_ok_for_derived_struct() {
+        // ParentCfg does not override validate(); default implementation should return Ok
+        let p = ParentCfg::new();
+        assert!(p.validate().is_ok());
     }
 }

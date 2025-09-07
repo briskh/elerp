@@ -3,9 +3,8 @@ name = "libelp-proc-internal"
 version = "0.1.0"
 edition = "2024"
 
-[[example]]
-name = "error_handling_example"
-path = "examples/error_handling_example.rs"
+[lib]
+doctest = false
 
 [dependencies]
 darling = "0.21"

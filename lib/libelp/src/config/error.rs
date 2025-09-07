@@ -277,5 +277,76 @@ mod tests {
         assert_eq!(ConfigurationError::toml_serialize_error("test").category(), ErrorCategory::Serialize);
         assert_eq!(ConfigurationError::validation_error("test", None).category(), ErrorCategory::Validation);
         assert_eq!(ConfigurationError::file_error("test", "path").category(), ErrorCategory::Io);
+        assert_eq!(ConfigurationError::load_error("load fail", "source").category(), ErrorCategory::Io);
+        assert_eq!(ConfigurationError::save_error("save fail", "dest").category(), ErrorCategory::Io);
+    }
+
+    #[test]
+    fn test_user_message_for_file_and_save_and_load_errors() {
+        let ferr = ConfigurationError::file_error("permission denied", "/tmp/x");
+        let fmsg = ferr.user_message();
+        assert!(fmsg.contains("/tmp/x"));
+        assert!(fmsg.contains("permission denied"));
+        assert!(fmsg.contains("Suggestion:"));
+
+        let serr = ConfigurationError::save_error("disk full", "/var/cfg.toml");
+        let smsg = serr.user_message();
+        assert!(smsg.contains("/var/cfg.toml"));
+        assert!(smsg.contains("disk full"));
+        assert!(smsg.contains("Suggestion:"));
+
+        let lerr = ConfigurationError::load_error("not found", "ENV:APP_CFG");
+        let lmsg = lerr.user_message();
+        assert!(lmsg.contains("ENV:APP_CFG"));
+        assert!(lmsg.contains("not found"));
+        assert!(lmsg.contains("Suggestion:"));
+    }
+
+    #[test]
+    fn test_utils_load_from_file_reports_parse_location() {
+        use serde::Deserialize;
+        use std::fs;
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        #[allow(dead_code)]
+        #[derive(Deserialize, Debug)]
+        struct S { key: String, port: u16 }
+
+        let mut path = std::env::temp_dir();
+        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        path.push(format!("elp_err_loc_{}.toml", nanos));
+
+        let content = "key = \"v\"\nport = \"oops\"\n"; // line 2 column 8 likely
+        fs::write(&path, content).unwrap();
+
+        let err = super::utils::load_from_file::<S>(&path).unwrap_err();
+        match err {
+            ConfigurationError::TomlParseError { line, column: _ , .. } => {
+                assert!(line.is_some());
+            }
+            other => panic!("unexpected error: {:?}", other),
+        }
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_utils_save_to_file_serialize_error() {
+        use serde::Serialize;
+        use std::collections::HashMap;
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        #[derive(Serialize, Debug)]
+        struct W { map: HashMap<i32, String> }
+
+        let mut w = W { map: HashMap::new() };
+        w.map.insert(1, "a".to_string());
+
+        let mut path = std::env::temp_dir();
+        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        path.push(format!("elp_err_ser_{}.toml", nanos));
+
+        let res = super::utils::save_to_file(&w, &path);
+        assert!(matches!(res, Err(ConfigurationError::TomlSerializeError { .. })), "expected TomlSerializeError, got: {:?}", res);
     }
 }
