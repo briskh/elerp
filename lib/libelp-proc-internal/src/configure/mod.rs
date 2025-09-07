@@ -4,8 +4,11 @@ use syn::{DeriveInput, Expr, Type};
 
 use darling::FromField;
 
+mod error;
 mod process_default_value;
 mod toml_utils;
+
+pub use error::{ConfigError, ConfigResult, ToSynError};
 
 #[derive(FromField, Default, Debug)]
 #[darling(attributes(config))]
@@ -24,7 +27,8 @@ pub fn handler(ast: DeriveInput) -> TokenStream {
         syn::Data::Struct(s) => s,
         // If it's another type, return error
         _ => {
-            return syn::Error::new_spanned(name, "this derive macro only supports structs")
+            return ConfigError::only_supports_structs(name.span())
+                .to_syn_error()
                 .to_compile_error()
                 .into();
         }
@@ -48,7 +52,7 @@ pub fn handler(ast: DeriveInput) -> TokenStream {
                     Ok(parsed_token) => parsed_token,
                     Err(e) => {
                         // If processing fails, return compile error
-                        return e.to_compile_error().into();
+                        return e.to_syn_error().to_compile_error().into();
                     }
                 }
             }
@@ -92,7 +96,7 @@ pub fn handler(ast: DeriveInput) -> TokenStream {
     // Generate to_toml method
     let to_toml_impl = match toml_utils::generate_to_toml_impl(name, &fields, &field_configs) {
         Ok(impl_code) => impl_code,
-        Err(e) => return e.to_compile_error().into(),
+        Err(e) => return e.to_syn_error().to_compile_error().into(),
     };
 
     // Fold to find maximum expression: (((0 max d1) max d2) ...)

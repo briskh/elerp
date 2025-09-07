@@ -1,13 +1,16 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Expr, Field, Lit, Type};
+use syn::spanned::Spanned;
+
+use super::{ConfigError, ConfigResult};
 
 /// Convert field value to TOML string representation
 pub fn field_value_to_toml_string(
     _field: &Field,
     default_expr: &Option<Expr>,
     field_ty: &Type,
-) -> Result<String, syn::Error> {
+) -> ConfigResult<String> {
     let type_name = get_type_name(field_ty)?;
 
     if let Some(default_expr) = default_expr {
@@ -17,9 +20,9 @@ pub fn field_value_to_toml_string(
                 Lit::Int(int_lit) => Ok(int_lit.base10_digits().to_string()),
                 Lit::Float(float_lit) => Ok(float_lit.base10_digits().to_string()),
                 Lit::Bool(bool_lit) => Ok(bool_lit.value().to_string()),
-                _ => Err(syn::Error::new_spanned(
-                    field_ty,
-                    format!("Unsupported literal type: {:?}", lit.lit),
+                _ => Err(ConfigError::unsupported_literal_type(
+                    &format!("{:?}", lit.lit),
+                    field_ty.span(),
                 )),
             }
         } else if let Expr::Path(path_expr) = default_expr {
@@ -52,16 +55,16 @@ pub fn field_value_to_toml_string(
 }
 
 /// Get type name
-fn get_type_name(ty: &Type) -> Result<String, syn::Error> {
+fn get_type_name(ty: &Type) -> ConfigResult<String> {
     match ty {
         Type::Path(type_path) => {
             if let Some(segment) = type_path.path.segments.last() {
                 Ok(segment.ident.to_string())
             } else {
-                Err(syn::Error::new_spanned(ty, "Cannot identify type path"))
+                Err(ConfigError::cannot_identify_type_path(ty.span()))
             }
         }
-        _ => Err(syn::Error::new_spanned(ty, "Unsupported type format")),
+        _ => Err(ConfigError::unsupported_type_format(ty.span())),
     }
 }
 
@@ -155,7 +158,7 @@ pub fn generate_to_toml_impl(
     _struct_name: &syn::Ident,
     _fields: &[&Field],
     field_configs: &[(Field, Option<Expr>, Option<String>)],
-) -> Result<TokenStream, syn::Error> {
+) -> ConfigResult<TokenStream> {
     // Generate branch code for each field
     let mut per_field_snippets: Vec<TokenStream> = Vec::new();
 
@@ -163,7 +166,7 @@ pub fn generate_to_toml_impl(
         let field_ident = field
             .ident
             .as_ref()
-            .ok_or_else(|| syn::Error::new_spanned(field, "Field must have a name"))?;
+            .ok_or_else(|| ConfigError::field_must_have_name(field.span()))?;
         let type_name = get_type_name(&field.ty)?;
         let note_text = note.as_deref().unwrap_or("");
         let default_value_lit = field_value_to_toml_string(field, default_expr, &field.ty)?;

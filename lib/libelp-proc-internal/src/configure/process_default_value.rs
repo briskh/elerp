@@ -1,12 +1,15 @@
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::{Expr, Lit, LitStr, Type};
+use syn::spanned::Spanned;
+
+use super::{ConfigError, ConfigResult};
 
 /// Process default value expression, check type matching and perform necessary conversions
 pub fn process_default_value(
     default_expr: &Expr,
     field_ty: &Type,
-) -> Result<TokenStream, syn::Error> {
+) -> ConfigResult<TokenStream> {
     // Get field type name
     let type_name = get_type_name(field_ty)?;
 
@@ -17,9 +20,9 @@ pub fn process_default_value(
             Lit::Int(int_lit) => handle_int_literal(int_lit, &type_name, field_ty),
             Lit::Float(float_lit) => handle_float_literal(float_lit, &type_name, field_ty),
             Lit::Bool(bool_lit) => handle_bool_literal(bool_lit, &type_name),
-            _ => Err(syn::Error::new_spanned(
-                field_ty,
-                format!("Unsupported literal type: {:?}", lit.lit),
+            _ => Err(ConfigError::unsupported_literal_type(
+                &format!("{:?}", lit.lit),
+                field_ty.span(),
             )),
         }
     } else if let Expr::Path(path_expr) = default_expr {
@@ -39,7 +42,7 @@ pub fn process_default_value(
                 _ => Ok(quote! { #ident }),
             }
         } else {
-            Err(syn::Error::new_spanned(default_expr, "Cannot parse path expression"))
+            Err(ConfigError::cannot_parse_path_expression(default_expr.span()))
         }
     } else {
         // For other non-literal expressions, use directly
@@ -48,16 +51,16 @@ pub fn process_default_value(
 }
 
 /// Get type name
-fn get_type_name(ty: &Type) -> Result<String, syn::Error> {
+fn get_type_name(ty: &Type) -> ConfigResult<String> {
     match ty {
         Type::Path(type_path) => {
             if let Some(segment) = type_path.path.segments.last() {
                 Ok(segment.ident.to_string())
             } else {
-                Err(syn::Error::new_spanned(ty, "Cannot identify type path"))
+                Err(ConfigError::cannot_identify_type_path(ty.span()))
             }
         }
-        _ => Err(syn::Error::new_spanned(ty, "Unsupported type format")),
+        _ => Err(ConfigError::unsupported_type_format(ty.span())),
     }
 }
 
@@ -65,13 +68,13 @@ fn get_type_name(ty: &Type) -> Result<String, syn::Error> {
 fn handle_string_literal(
     str_lit: &syn::LitStr,
     type_name: &str,
-) -> Result<TokenStream, syn::Error> {
+) -> ConfigResult<TokenStream> {
     match type_name {
         "String" => Ok(quote! { #str_lit.to_string() }),
         "str" => Ok(quote! { #str_lit }),
-        _ => Err(syn::Error::new_spanned(
-            str_lit,
-            format!("String literal cannot be used for type {}", type_name),
+        _ => Err(ConfigError::string_literal_wrong_type(
+            type_name,
+            str_lit.span(),
         )),
     }
 }
@@ -81,7 +84,7 @@ fn handle_int_literal(
     int_lit: &syn::LitInt,
     type_name: &str,
     field_ty: &Type,
-) -> Result<TokenStream, syn::Error> {
+) -> ConfigResult<TokenStream> {
     let value_str = int_lit.base10_digits();
 
     match type_name {
@@ -97,9 +100,9 @@ fn handle_int_literal(
         "u64" => parse_and_quote::<u64>(value_str, field_ty),
         "u128" => parse_and_quote::<u128>(value_str, field_ty),
         "usize" => parse_and_quote::<usize>(value_str, field_ty),
-        _ => Err(syn::Error::new_spanned(
-            field_ty,
-            format!("Integer literal cannot be used for type {}", type_name),
+        _ => Err(ConfigError::integer_literal_wrong_type(
+            type_name,
+            field_ty.span(),
         )),
     }
 }
@@ -109,15 +112,15 @@ fn handle_float_literal(
     float_lit: &syn::LitFloat,
     type_name: &str,
     field_ty: &Type,
-) -> Result<TokenStream, syn::Error> {
+) -> ConfigResult<TokenStream> {
     let value_str = float_lit.base10_digits();
 
     match type_name {
         "f32" => parse_and_quote::<f32>(value_str, field_ty),
         "f64" => parse_and_quote::<f64>(value_str, field_ty),
-        _ => Err(syn::Error::new_spanned(
-            field_ty,
-            format!("Float literal cannot be used for type {}", type_name),
+        _ => Err(ConfigError::float_literal_wrong_type(
+            type_name,
+            field_ty.span(),
         )),
     }
 }
@@ -126,27 +129,29 @@ fn handle_float_literal(
 fn handle_bool_literal(
     bool_lit: &syn::LitBool,
     type_name: &str,
-) -> Result<TokenStream, syn::Error> {
+) -> ConfigResult<TokenStream> {
     match type_name {
         "bool" => Ok(quote! { #bool_lit }),
-        _ => Err(syn::Error::new_spanned(
-            bool_lit,
-            format!("Boolean literal cannot be used for type {}", type_name),
+        _ => Err(ConfigError::boolean_literal_wrong_type(
+            type_name,
+            bool_lit.span(),
         )),
     }
 }
 
 /// Parse string to specified type and generate TokenStream
-fn parse_and_quote<T>(value_str: &str, field_ty: &Type) -> Result<TokenStream, syn::Error>
+fn parse_and_quote<T>(value_str: &str, field_ty: &Type) -> ConfigResult<TokenStream>
 where
     T: std::str::FromStr + quote::ToTokens,
     T::Err: std::fmt::Display,
 {
     match value_str.parse::<T>() {
         Ok(parsed) => Ok(quote! { #parsed }),
-        Err(e) => Err(syn::Error::new_spanned(
-            field_ty,
-            format!("Cannot parse '{}' as type: {}", value_str, e),
+        Err(e) => Err(ConfigError::parse_error(
+            value_str,
+            &std::any::type_name::<T>(),
+            &e.to_string(),
+            field_ty.span(),
         )),
     }
 }
